@@ -1,0 +1,39 @@
+import requests
+import pandas as pd
+
+def check_redirection(url):
+    """
+    Comprueba si una URL redirecciona de HTTPS a HTTP.
+
+    Args:
+        url (str): La URL a comprobar.
+
+    Returns:
+        str: "✅ Correcto" si no redirecciona a HTTP, "❌ Error" si hay un error o redirecciona.
+    """
+
+    try:
+        response = requests.get(url, allow_redirects=False, verify=True)
+
+        if response.status_code == 301 or response.status_code == 302:
+            if response.headers['Location'].startswith('http://'):
+                return "❌ Error: Redirección a HTTP"
+        return "✅ Correcto la URL no redirecciona a HTTP."
+
+    except requests.exceptions.RequestException as e:
+        if "NameResolutionError" in str(e):  # Filtrar error de resolución de nombre
+            return f"❌ Error: No se pudo resolver el nombre de host: {url}"
+        else:
+            return f"❌ Error: {e}"  # Capturar otros errores de conexión
+
+# Leer las URLs desde el archivo Excel
+file_path = r"C:\Users\yalbe\OneDrive\Escritorio\Analisis\HeadersPRHGE.xlsx"
+df = pd.read_excel(file_path)
+urls = df['URL'].tolist()
+
+# Iterar sobre las URLs y comprobar redireccionamientos
+for url in urls:
+    result = check_redirection(url)
+    print(f"URL: {url}, Resultado: {result}")
+
+print("Se han completado las verificaciones de redirección")
