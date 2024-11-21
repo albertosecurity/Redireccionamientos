@@ -1,39 +1,78 @@
 import requests
 import pandas as pd
+from urllib.parse import urlparse
 
 def check_redirection(url):
     """
-    Comprueba si una URL redirecciona de HTTPS a HTTP.
+    Comprueba si una URL redirecciona correctamente de HTTP a HTTPS o si redirecciona a HTTP.
 
     Args:
         url (str): La URL a comprobar.
 
     Returns:
-        str: "✅ Correcto" si no redirecciona a HTTP, "❌ Error" si hay un error o redirecciona.
+        str: Resultado de la comprobación y URL redireccionada en caso de redirección.
     """
-
     try:
-        response = requests.get(url, allow_redirects=False, verify=True)
+        # Convertir URL a HTTP si es HTTPS para verificar ambos casos
+        http_url = url.replace("https://", "http://")
 
-        if response.status_code == 301 or response.status_code == 302:
-            if response.headers['Location'].startswith('http://'):
-                return "❌ Error: Redirección a HTTP"
-        return "✅ Correcto la URL no redirecciona a HTTP."
+        # Realizar la solicitud sin seguir redirecciones
+        response = requests.get(http_url, allow_redirects=False, verify=True)
+
+        if response.status_code in [301, 302]:
+            redir_location = response.headers.get('Location', '')
+
+            # Analizar la URL redirigida
+            parsed_url = urlparse(url)
+            parsed_redir = urlparse(redir_location)
+
+            # Comprobar si redirecciona al mismo dominio y a HTTPS
+            if redir_location.startswith('https://') and parsed_url.netloc == parsed_redir.netloc:
+                return "HTTPS_CORRECTO", redir_location
+            elif redir_location.startswith('http://'):
+                return "ERROR_HTTP", redir_location
+            else:
+                return "ERROR_OTRO_DOMINIO", redir_location
+
+        return "SIN_REDIRECCION", None
 
     except requests.exceptions.RequestException as e:
-        if "NameResolutionError" in str(e):  # Filtrar error de resolución de nombre
-            return f"❌ Error: No se pudo resolver el nombre de host: {url}"
-        else:
-            return f"❌ Error: {e}"  # Capturar otros errores de conexión
+        return "ERROR_CONEXION", str(e)
 
 # Leer las URLs desde el archivo Excel
-file_path = r"C:\Users\yalbe\OneDrive\Escritorio\Analisis\HeadersPRHGE.xlsx"
+file_path = r"Archivo.xlsx"
 df = pd.read_excel(file_path)
-urls = df['URL'].tolist()
+urls = df['Nombre de Columna'].tolist()
+
+# Crear diccionarios para almacenar los resultados
+resultados = {}
+resultados["HTTPS_CORRECTO"] = []
+resultados["SIN_REDIRECCION"] = []
+resultados["ERROR_HTTP"] = []
+resultados["ERROR_OTRO_DOMINIO"] = []
+resultados["ERROR_CONEXION"] = []
 
 # Iterar sobre las URLs y comprobar redireccionamientos
 for url in urls:
-    result = check_redirection(url)
-    print(f"URL: {url}, Resultado: {result}")
+    resultado, detalle = check_redirection(url)
+    resultados[resultado].append({'URL': url, 'Detalle': detalle})
 
-print("Se han completado las verificaciones de redirección")
+# Crear DataFrames separados
+df_https = pd.DataFrame(resultados["HTTPS_CORRECTO"])
+df_sin_redireccion = pd.DataFrame(resultados["SIN_REDIRECCION"])
+df_error_http = pd.DataFrame(resultados["ERROR_HTTP"])
+df_error_otro_dominio = pd.DataFrame(resultados["ERROR_OTRO_DOMINIO"])
+df_error_conexion = pd.DataFrame(resultados["ERROR_CONEXION"])
+
+# Guardar los resultados en hojas separadas de un mismo archivo Excel
+with pd.ExcelWriter(r"Resultado.xlsx") as writer:
+    df_https.to_excel(writer, sheet_name='Redireccion_a_HTTPS', index=False)
+    df_sin_redireccion.to_excel(writer, sheet_name='Sin_Redireccion', index=False)
+    df_error_http.to_excel(writer, sheet_name='Error_HTTP', index=False)
+    df_error_otro_dominio.to_excel(writer, sheet_name='Error_Otro_Dominio', index=False)
+    df_error_conexion.to_excel(writer, sheet_name='Error_Conexion', index=False)
+
+# Conteo de resultados
+print("Resumen:")
+for categoria, resultados in resultados.items():
+    print(f"{categoria}: {len(resultados)}")
